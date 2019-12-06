@@ -1,0 +1,4 @@
+*.pickle
+[0-9].py
+[0-9].ipynb
+.ipynb_checkpoints
