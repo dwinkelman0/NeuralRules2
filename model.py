@@ -8,6 +8,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import numpy as np
 import pickle
+import time
 import sys
 import os
 
@@ -164,7 +165,7 @@ class NeuralNetwork:
     def recompile(self):
         # Compile model
         self.classifier.compile(optimizer="adam", loss="binary_crossentropy",
-                           metrics=["accuracy", tf.keras.metrics.Recall()])
+                           metrics=["accuracy"])
         
         
     def train(self, epochs=20):
@@ -181,11 +182,15 @@ class NeuralNetwork:
             def __init__(self):
                 super(Logger, self).__init__()
                 self.epoch_number = 1
+                
+            def on_epoch_begin(self, epoch, logs={}):
+                self.start_time = time.time()
             
             def on_epoch_end(self, epoch, logs={}):
-                stats = ", ".join(["{} = {:.3f}".format(k, v) for k, v in logs.items()])
-                print("Epoch {} (Sparsity = {}, Steepness = {}): {}".format(
-                        self.epoch_number, sparsity, steepness, stats))
+                time_diff = time.time() - self.start_time
+                stats = ", ".join(["{} = {:.4f}".format(k, v) for k, v in logs.items()])
+                print("Epoch {:2d} [{:.2f}] (Sparsity = {:.4f}, Steepness = {}): {}".format(
+                        self.epoch_number, time_diff, sparsity, steepness, stats))
                 self.epoch_number += 1
         
         early_stopping = tf.keras.callbacks.EarlyStopping(
