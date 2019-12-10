@@ -1,3 +1,6 @@
+import numpy as np
+
+
 class Node:
     
     def __init__(self, state):
@@ -99,6 +102,11 @@ def processSparseningThenSteepeningGrid(root_node):
         
         for op, op_data, next_node in current_node.next:
             if op == "sparsening": break
+        if op == "steepening": break
         current_node = next_node
         
     return output
+
+
+def mapMetric(func, grid):
+    return np.array([[func(state) for state in sublist] for sublist in grid])
