@@ -108,5 +108,5 @@ def processSparseningThenSteepeningGrid(root_node):
     return output
 
 
-def mapMetric(func, grid):
-    return np.array([[func(state) for state in sublist] for sublist in grid])
+def mapMetric(func, grid, *args, **kwargs):
+    return np.array([[func(state, *args, **kwargs) for state in sublist] for sublist in grid])
