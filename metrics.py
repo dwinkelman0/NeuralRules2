@@ -13,8 +13,8 @@ def confusionMatrix(state, subset, cutoff, categories):
     return matrix
 
 
-def sparsity2(state):
-    return 1 - state["params"]["dense"][0][2].sum() / state["params"]["dense"][0][2].size
+def sparsity(state):
+    return np.array([1 - params[2].sum() / params[2].size for params in state["params"]["dense"] if len(params) == 3])
 
 def zeroRows(state):
     col_sums = state["params"]["dense"][0][2].sum(axis=1)

@@ -21,12 +21,25 @@ def importData(categories, subset):
         
     return data["in"], data["out"]
 
+###############################################################################
+# Observations about sparse weights (and managing multi-layered sparseness):
+#  * if a row in a weights matrix is zero, then the corresponding input does
+#    not matter
+#  * if a column in a weights matrix is zero, the the corresponding output does
+#    not matter
+#  * an input that does not matter makes the corresponding row in a weights
+#    matrix not matter
+#  * an output that does not matter makes the corresponding column in a weights
+#    matrix not matter
 
 # Define a custom Keras dense layer whose weights can be pruned using a mask
 class SparseDense(tf.keras.layers.Dense):
     
-    def __init__(self, units, **kwargs):
+    def __init__(self, units, sparsening_rate, **kwargs):
         super(SparseDense, self).__init__(units, **kwargs)
+        self.sparsening_rate = sparsening_rate
+        self.last_sparse_layer = None
+        self.next_sparse_layer = None
 
     def build(self, input_shape):
         super(SparseDense, self).build(input_shape)
@@ -46,8 +59,32 @@ class SparseDense(tf.keras.layers.Dense):
         output = tf.keras.backend.dot(inputs, masked_kernel)
         return tf.keras.backend.bias_add(output, self.bias, data_format="channels_last")
     
-    def makeProportionallySparse(self, p):
+    def removeRedundantWeights(self):
+        changed = False
+        
+        # Zero columns in the previous weights matrix indicate that the
+        # parameters in the corresponding row do not matter
+        if self.last_sparse_layer is not None:
+            for index, col in enumerate(self.last_sparse_layer.sparsity_matrix.T):
+                if col.sum() == 0:
+                    self.sparsity_matrix[index] = 0
+                    changed = True
+                    
+        # Zero rows in the next weights matrix indicate that the parameters
+        # in the corresponding column do not matter
+        if self.next_sparse_layer is not None:
+            for index, row in enumerate(self.next_sparse_layer.sparsity_matrix):
+                if row.sum() == 0:
+                    self.sparsity_matrix[:, index] = 0
+                    changed = True
+                    
+        return changed
+    
+    def makeProportionallySparse(self, p=None):
         kernel = tf.keras.backend.get_value(self.kernel)
+        p = self.sparsening_rate if p is None else p
+        
+        self.removeRedundantWeights()
         
         # Remove some percentage of the remaining weights
         items = []
@@ -131,11 +168,11 @@ class NeuralNetwork:
         self.sparse_layers = []
         self.activation_layers = []
         
-        def addSparseLayer(output_dim, input_dim=None):
+        def addSparseLayer(output_dim, sparsening_rate, input_dim=None):
             if input_dim is not None:
-                layer = SparseDense(output_dim, kernel_initializer="random_normal", input_dim=input_dim)
+                layer = SparseDense(output_dim, sparsening_rate, kernel_initializer="random_normal", input_dim=input_dim)
             else:
-                layer = SparseDense(output_dim, kernel_initializer="random_normal")
+                layer = SparseDense(output_dim, sparsening_rate, kernel_initializer="random_normal")
             self.sparse_layers.append(layer)
             self.classifier.add(layer)
             
@@ -145,19 +182,24 @@ class NeuralNetwork:
             self.classifier.add(layer)
         
         # First hidden layer (with sigmoidal activation)
-        addSparseLayer(self.layer_sizes[0], self.training_in.shape[1])
+        addSparseLayer(self.layer_sizes[0], 0.2, self.training_in.shape[1])
         addActivationLayer()
         self.classifier.add(tf.keras.layers.Dropout(self.dropout))
         
         # Second through penultimate hidden layers (with sigmoidal activation)
         for size in self.layer_sizes[1:]:
-            addSparseLayer(size)
+            addSparseLayer(size, 0.1)
             addActivationLayer()
             self.classifier.add(tf.keras.layers.Dropout(self.dropout))
             
         # Final layer (with softmax activation)
         self.classifier.add(tf.keras.layers.Dense(self.training_out.shape[1], kernel_initializer="random_normal"))
         self.classifier.add(tf.keras.layers.Softmax())
+        
+        # Link sparse layers so they communicate about redundant weights
+        for current_layer, next_layer in zip(self.sparse_layers[:-1], self.sparse_layers[1:]):
+            current_layer.__dict__["next_sparse_layer"] = next_layer
+            next_layer.__dict__["last_sparse_layer"] = current_layer
         
         self.recompile()
         
@@ -212,14 +254,17 @@ class NeuralNetwork:
         
         for layer in self.sparse_layers:
             initial_sparsity = layer.getSparsity()
-            layer.makeProportionallySparse(0.2)
+            layer.makeProportionallySparse()
             final_sparsity = layer.getSparsity()
             output.append({
                 "initial_sparsity": initial_sparsity,
                 "final_sparsity": final_sparsity,
                 "function": "makeProportionallySparse",
-                "arguments": {"p": 0.2}
+                "arguments": {"p": layer.sparsening_rate}
             })
+            
+        for layer in self.sparse_layers:
+            layer.removeRedundantWeights()
             
         self.recompile()
             

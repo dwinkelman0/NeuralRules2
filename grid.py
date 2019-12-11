@@ -11,14 +11,14 @@ class Node:
         self.next.append((operation_type, operation, node))
 
 
-def forkSteepnessIncrease(nn, node):
+def forkSteepnessIncrease(nn, node, steepening_cycles):
     
     # Save parameters
     old_params = nn.getParams()
     
     current_node = node
     
-    for step in range(8):
+    for step in range(steepening_cycles):
         
         # Increase steepness
         steepening_op = nn.steepen()
@@ -35,12 +35,12 @@ def forkSteepnessIncrease(nn, node):
     nn.setParams(old_params)
 
 
-def generateSparseningThenSteepeningGrid(main_nn):
+def generateSparseningThenSteepeningGrid(main_nn, sparsening_cycles, steepening_cycles):
     
     root_node = Node(main_nn.getState())
     current_node = root_node
 
-    for stage in range(30):
+    for stage in range(sparsening_cycles):
 
         # Train the model
         training_op = main_nn.train(100)
@@ -49,16 +49,13 @@ def generateSparseningThenSteepeningGrid(main_nn):
         current_node = next_node
 
         # Make a fork from the main model and increase steepness
-        forkSteepnessIncrease(main_nn, current_node)
+        forkSteepnessIncrease(main_nn, current_node, steepening_cycles)
 
         # Increase sparseness
         sparsening_op = main_nn.sparsen()
         next_node = Node(main_nn.getState())
         current_node.connect(next_node, "sparsening", sparsening_op)
         current_node = next_node
-
-        with open("{}/intermediate-{}.pickle".format(folder_name, stage), "wb") as output_file:
-            pickle.dump({"root": root_node}, output_file)
 
     # Train the model
     training_op = main_nn.train(100)
@@ -67,7 +64,7 @@ def generateSparseningThenSteepeningGrid(main_nn):
     current_node = next_node
 
     # Make a fork from the main model and increase steepness
-    forkSteepnessIncrease(main_nn, current_node)
+    forkSteepnessIncrease(main_nn, current_node, steepening_cycles)
     
     return root_node
     
@@ -91,6 +88,7 @@ def processSparseningThenSteepeningGrid(root_node):
         while len(current_node.next) > 0:
             for op, op_data, next_node in current_node.next:
                 if op == "steepening": break
+            if op != "steepening": break
                     
             current_node = next_node
             op, op_data, next_node = current_node.next[0]
@@ -102,7 +100,7 @@ def processSparseningThenSteepeningGrid(root_node):
         
         for op, op_data, next_node in current_node.next:
             if op == "sparsening": break
-        if op == "steepening": break
+        if op != "sparsening": break
         current_node = next_node
         
     return output
